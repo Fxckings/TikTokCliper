@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import List, Dict, Optional
+from typing import Any, List, Dict, Optional
 from pathlib import Path
 import numpy as np
 import cv2
@@ -212,13 +212,23 @@ class ClipGenerator:
             return clip
 
         subtitle_clips = []
+        clip_duration = clip.duration
 
         logger.info(f"Creating {len(subtitles)} animated subtitle clips...")
 
-        for i, subtitle in enumerate(subtitles):
+        for i, subtitle in enumerate[Dict](subtitles):
             text = subtitle['text']
             start = subtitle['start']
             duration = subtitle['duration']
+
+            if start >= clip_duration:
+                logger.debug(f"Skipping subtitle at {start:.2f}s (clip duration: {clip_duration:.2f}s)")
+                continue
+
+            if start + duration > clip_duration:
+                old_duration = duration
+                duration = clip_duration - start
+                logger.debug(f"Trimming subtitle duration from {old_duration:.2f}s to {duration:.2f}s")
 
             txt_clip = self._create_animated_subtitle(
                 text, start, duration, clip.w, clip.h

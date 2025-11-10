@@ -1,9 +1,11 @@
 import os
 import logging
-from typing import List, Dict, Tuple
+from typing import Any, List, Dict, Tuple
 import whisper
 import torch
 from tqdm import tqdm
+from moviepy import VideoFileClip
+import tempfile
 
 import config
 
@@ -190,15 +192,67 @@ class SubtitleGenerator:
         end_time: float = None,
         language: str = None
     ) -> List[Dict]:
-        result = self.transcribe(video_path, start_time, end_time, language)
+        temp_file = None
+        actual_video_path = video_path
+        original_start = start_time
+        original_end = end_time
 
-        subtitles = self.format_subtitles(result['segments'])
+        if start_time is not None and end_time is not None:
+            try:
+                logger.info(f"Extracting audio segment from {start_time:.2f}s to {end_time:.2f}s")
 
-        return subtitles
+                video = VideoFileClip(video_path)
+                segment = video.subclipped(start_time, end_time)
+
+                temp_file = tempfile.NamedTemporaryFile(suffix='.mp3', delete=False)
+                temp_audio_path = temp_file.name
+                temp_file.close()
+
+                segment.audio.write_audiofile(
+                    temp_audio_path,
+                    codec='libmp3lame',
+                    bitrate='192k',
+                    fps=44100,
+                    logger=None
+                )
+
+                segment.close()
+                video.close()
+
+                actual_video_path = temp_audio_path
+                start_time = None
+                end_time = None
+
+            except Exception as e:
+                logger.error(f"Error extracting audio segment: {e}")
+                if temp_file:
+                    try:
+                        os.unlink(temp_file.name)
+                    except:
+                        pass
+                actual_video_path = video_path
+
+        try:
+            result = self.transcribe(actual_video_path, start_time, end_time, language)
+            subtitles = self.format_subtitles(result['segments'])
+
+            if subtitles and temp_file and original_start is not None and original_end is not None:
+                clip_duration = original_end - original_start
+                subtitles = [s for s in subtitles if s['start'] < clip_duration]
+                logger.info(f"Filtered subtitles to {len(subtitles)} segments within {clip_duration:.2f}s duration")
+
+            return subtitles
+
+        finally:
+            if temp_file:
+                try:
+                    os.unlink(temp_file.name)
+                except:
+                    pass
 
     def save_srt(self, subtitles: List[Dict], output_path: str):
         with open(output_path, 'w', encoding='utf-8') as f:
-            for i, subtitle in enumerate(subtitles, 1):
+            for i, subtitle in enumerate[Dict](subtitles, 1):
                 f.write(f"{i}\n")
 
                 start = self._format_timestamp(subtitle['start'])
